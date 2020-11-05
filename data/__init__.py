@@ -18,6 +18,7 @@ from .itm import (TokenBucketSamplerForItm, ItmDataset,
                   ItmRankDataset, ItmValDataset, ItmEvalDataset,
                   ItmRankDatasetHardNegFromImage,
                   ItmRankDatasetHardNegFromText,
+                  ImageRetrievalDataset,
                   itm_rank_collate, itm_val_collate, itm_eval_collate,
                   itm_rank_hn_collate)
 from .mlm import MlmDataset, mlm_collate

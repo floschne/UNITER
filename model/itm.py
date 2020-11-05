@@ -4,6 +4,7 @@ Licensed under the MIT license.
 
 UNITER for ITM model
 """
+import sys
 from collections import defaultdict
 
 import torch
@@ -35,6 +36,7 @@ class UniterForImageTextRetrieval(UniterPreTrainedModel):
         img_pos_feat = batch['img_pos_feat']
         attention_mask = batch['attn_masks']
         gather_index = batch['gather_index']
+
         sequence_output = self.uniter(input_ids, position_ids,
                                       img_feat, img_pos_feat,
                                       attention_mask, gather_index,

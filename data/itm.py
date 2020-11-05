@@ -4,15 +4,18 @@ Licensed under the MIT license.
 
 Itm dataset
 """
-from collections import defaultdict
 import copy
+import json
 import random
+from collections import defaultdict
 
-import torch
-from torch.nn.utils.rnn import pad_sequence
-from toolz.sandbox import unzip
-from cytoolz import concat
 import numpy as np
+import torch
+from cytoolz import concat
+from pytorch_pretrained_bert import BertTokenizer
+from toolz.sandbox import unzip
+from torch.nn.utils.rnn import pad_sequence
+from torch.utils.data import Dataset
 
 from .data import (DetectFeatTxtTokDataset, DetectFeatLmdb, TxtTokLmdb,
                    pad_tensors, get_gather_index, get_ids_and_lens)
@@ -49,6 +52,7 @@ def sample_negative(sample_pool, ground_truths, num_sample):
 class ItmDataset(DetectFeatTxtTokDataset):
     """ NOTE this Dataset handles distributed training itself
     (for more efficient negative sampling) """
+
     def __init__(self, txt_db, img_db, neg_sample_p=0.5):
         assert isinstance(txt_db, TxtTokLmdb)
         assert isinstance(img_db, DetectFeatLmdb)
@@ -66,7 +70,7 @@ class ItmDataset(DetectFeatTxtTokDataset):
         """ should be called every epoch for more randomness"""
         self.labels = np.random.choice(
             [0, 1], size=len(self.ids),
-            p=[self.neg_sample_p, 1-self.neg_sample_p])
+            p=[self.neg_sample_p, 1 - self.neg_sample_p])
 
         self.lens = []
         self.train_imgs = []
@@ -129,7 +133,7 @@ def _compute_ot_scatter(txt_lens, max_txt_len, joint_len):
     ot_scatter = torch.arange(0, joint_len, dtype=torch.long
                               ).unsqueeze(0).repeat(len(txt_lens), 1)
     for i, tl in enumerate(txt_lens):
-        max_ind = max_txt_len + (joint_len-tl)
+        max_ind = max_txt_len + (joint_len - tl)
         ot_scatter.data[i, tl:] = torch.arange(max_txt_len, max_ind,
                                                dtype=torch.long).data
     return ot_scatter
@@ -216,7 +220,7 @@ class ItmRankDataset(DetectFeatTxtTokDataset):
                         [(neg_txt_id, gt_img_fname)
                          for neg_txt_id in neg_sample_txt_ids])
         inputs = self._collect_inputs(id_pairs)
-        assert len(inputs) == (1 + 2*self.neg_sample_size)
+        assert len(inputs) == (1 + 2 * self.neg_sample_size)
         return inputs
 
     def _collect_inputs(self, id_pairs):
@@ -301,9 +305,9 @@ class ItmRankDatasetHardNegFromText(DetectFeatTxtTokDataset):
         tl = input_ids.size(1)
         attn_masks = torch.zeros(len(img_ids), max(num_bbs) + tl).long()
         for i, nbb in enumerate(num_bbs):
-            attn_masks.data[i, :tl+nbb].fill_(1)
+            attn_masks.data[i, :tl + nbb].fill_(1)
         out_size = attn_masks.size(1)
-        gather_index = get_gather_index([tl]*len(img_ids), num_bbs,
+        gather_index = get_gather_index([tl] * len(img_ids), num_bbs,
                                         len(img_ids), tl, out_size)
 
         batch = {'input_ids': input_ids,
@@ -355,9 +359,9 @@ class ItmRankDatasetHardNegFromImage(DetectFeatTxtTokDataset):
 
         attn_masks = torch.zeros(len(txt_ids), max(txt_lens) + nbb).long()
         for i, tl in enumerate(txt_lens):
-            attn_masks.data[i, :tl+nbb].fill_(1)
+            attn_masks.data[i, :tl + nbb].fill_(1)
         out_size = attn_masks.size(1)
-        gather_index = get_gather_index(txt_lens, [nbb]*len(txt_ids),
+        gather_index = get_gather_index(txt_lens, [nbb] * len(txt_ids),
                                         len(txt_ids), tl, out_size)
 
         batch = {'input_ids': input_ids,
@@ -376,6 +380,7 @@ def itm_rank_hn_collate(inputs):
 
 class ItmValDataset(DetectFeatTxtTokDataset):
     """ For evaluating Image-Text-Retrieval task """
+
     def __init__(self, db_dir, img_dir, mini_batch_size=400):
         super().__init__(db_dir, img_dir)
         del self.lens
@@ -392,8 +397,8 @@ class ItmValDataset(DetectFeatTxtTokDataset):
 
         # sample fixed negatives for each gt image
         i = self.all_img_ids.index(gt_img_id)
-        neg_st = i+1
-        neg_end = neg_st+self.bs-1
+        neg_st = i + 1
+        neg_end = neg_st + self.bs - 1
         if neg_end > len(self.all_img_ids):
             # warp around
             neg_end -= len(self.all_img_ids)
@@ -402,7 +407,7 @@ class ItmValDataset(DetectFeatTxtTokDataset):
         else:
             neg_img_ids = self.all_img_ids[neg_st:neg_end]
 
-        assert len(neg_img_ids) == (self.bs - 1),\
+        assert len(neg_img_ids) == (self.bs - 1), \
             "Did not sample enough neg samples"
 
         return gt_img_id, neg_img_ids
@@ -432,9 +437,9 @@ class ItmValDataset(DetectFeatTxtTokDataset):
         tl = input_ids.size(1)
         attn_masks = torch.zeros(len(img_ids), max(num_bbs) + tl).long()
         for i, nbb in enumerate(num_bbs):
-            attn_masks.data[i, :tl+nbb].fill_(1)
+            attn_masks.data[i, :tl + nbb].fill_(1)
         out_size = attn_masks.size(1)
-        gather_index = get_gather_index([tl]*len(img_ids), num_bbs,
+        gather_index = get_gather_index([tl] * len(img_ids), num_bbs,
                                         len(img_ids), tl, out_size)
 
         batch = {'input_ids': input_ids,
@@ -461,8 +466,104 @@ class ItmEvalDataset(ItmValDataset):
         mini_batches = []
         for st in range(0, len(self.all_img_ids), self.bs):
             mini_batches.append(
-                self.get_batch(i, self.all_img_ids[st:st+self.bs]))
+                self.get_batch(i, self.all_img_ids[st:st + self.bs]))
         return mini_batches
+
+
+def get_bert_tokens(txt: str, tokenizer=None):
+    # taken from /prepro.py
+
+    if tokenizer is None:
+        tokenizer = BertTokenizer.from_pretrained('bert-base-cased', do_lower_case=False)
+
+    token_ids = []
+    for word in txt.strip().split():
+        ws = tokenizer.tokenize(word)
+        if not ws:
+            # some special char
+            continue
+        token_ids.extend(tokenizer.convert_tokens_to_ids(ws))
+
+    return token_ids
+
+
+class ImageRetrievalDataset(Dataset):
+    def __init__(self,
+                 query_txt: str,
+                 img_db: DetectFeatLmdb,
+                 meta_file_path: str,
+                 batch_size: int,
+                 ):
+        super().__init__()
+        assert isinstance(img_db, DetectFeatLmdb)
+        self.img_db = img_db
+        self.all_img_ids = list(self.img_db.name2nbb.keys())
+
+        self.input_ids = get_bert_tokens(txt=query_txt)
+
+        meta = json.load(open(meta_file_path, 'r'))
+
+        self.cls_ = meta['CLS']
+        self.sep = meta['SEP']
+
+        self.bs = batch_size
+
+    def __getitem__(self, i):
+        mini_batches = []
+        for st in range(0, len(self.all_img_ids), self.bs):
+            mini_batches.append(
+                self.get_batch(i, self.all_img_ids[st:st + self.bs]))
+        return mini_batches
+
+    def __len__(self):
+        return 1  # TODO 1 seems to be OK since we only have 1 sentence but why not len(self.all_img_ids) ?
+
+    # from TxtTokLmdb
+    def combine_inputs(self, *inputs):
+        # adds [CLS] and [SEP] tokens to each input
+        input_ids = [self.cls_]
+        for ids in inputs:
+            input_ids.extend(ids + [self.sep])
+        return torch.tensor(input_ids)
+
+    # from DetectFeatTxtTokDataset
+    def _get_img_feat(self, fname):
+        img_feat, bb = self.img_db[fname]
+        img_bb = torch.cat([bb, bb[:, 4:5] * bb[:, 5:]], dim=-1)
+        num_bb = img_feat.size(0)
+        return img_feat, img_bb, num_bb
+
+    # from ItmValDataset
+    def get_batch(self, i, img_ids):
+        # text features
+        input_ids = copy.deepcopy(self.input_ids)
+        input_ids = self.combine_inputs(input_ids)
+        input_ids = input_ids.unsqueeze(0).expand(len(img_ids), -1).clone()
+        position_ids = torch.arange(0, input_ids.size(1), dtype=torch.long).unsqueeze(0)
+
+        # process image features (gt always first)
+        img_feats, img_pos_feats, num_bbs = map(
+            list, unzip(map(self._get_img_feat, img_ids)))
+        img_feat = pad_tensors(img_feats, num_bbs)
+        img_pos_feat = pad_tensors(img_pos_feats, num_bbs)
+
+        tl = input_ids.size(1)
+        attn_masks = torch.zeros(len(img_ids), max(num_bbs) + tl).long()
+        for i, nbb in enumerate(num_bbs):
+            attn_masks.data[i, :tl + nbb].fill_(1)
+        out_size = attn_masks.size(1)
+
+        gather_index = get_gather_index([tl] * len(img_ids), num_bbs,
+                                        len(img_ids), tl, out_size)
+
+        batch = {'input_ids': input_ids,
+                 'position_ids': position_ids,
+                 'img_feat': img_feat,
+                 'img_pos_feat': img_pos_feat,
+                 'attn_masks': attn_masks,
+                 'gather_index': gather_index}
+
+        return batch
 
 
 itm_eval_collate = itm_val_collate
