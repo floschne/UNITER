@@ -7,6 +7,7 @@ import torch
 from apex import amp
 from horovod import torch as hvd
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from data import (PrefetchLoader,
                   DetectFeatLmdb,
@@ -14,6 +15,7 @@ from data import (PrefetchLoader,
 from model.itm import UniterForImageTextRetrieval
 from utils.const import IMG_DIM
 from utils.logger import LOGGER
+from utils.misc import NoOp
 
 
 def get_top_k_img_paths(scores, opts):
@@ -72,21 +74,33 @@ def main(opts):
 def run_img_retrieval(model, dataloader):
     model.eval()
     st = time()
-    LOGGER.info(f"start running Image Retrieval on {len(dataloader.dataset)} images...")
+    LOGGER.info(f"start running Image Retrieval on {len(dataloader.dataset.all_img_ids)} images...")
 
     score_matrix = torch.zeros(len(dataloader.dataset),
                                len(dataloader.dataset.all_img_ids),
                                device=torch.device("cuda"),
                                dtype=torch.float16)
+
+    if hvd.rank() == 0:
+        pbar = tqdm(total=len(dataloader))
+    else:
+        pbar = NoOp()
+
     for i, mini_batches in enumerate(dataloader):
         j = 0
-        print(len(mini_batches))
+        if hvd.rank() == 0:
+            pbar2 = tqdm(total=len(dataloader))
+        else:
+            pbar2 = NoOp()
+
         for batch in mini_batches:
             scores = model(batch, compute_loss=False)
             bs = scores.size(0)
             score_matrix.data[i, j:j + bs] = scores.data.squeeze(1).half()
             j += bs
+            pbar2.update(1)
         assert j == score_matrix.size(1)
+        pbar.update(1)
     model.train()
 
     # all_score is the similarity matrix from input to ALL images
