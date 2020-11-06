@@ -104,9 +104,9 @@ def run_img_retrieval(model, dataloader):
         assert j == score_matrix.size(1)
     model.train()
 
-    # all_score is the similarity matrix from input to ALL images
+    # all_score is the similarity matrix from input to images in the ds
     all_score = hvd.allgather(score_matrix)
-    assert all_score.size() == (1, len(dataloader.dataset.all_img_ids))
+    assert all_score.size() == (1, len(dataloader.dataset.all_img_ids)), f"{all_score.size()} == {(1, len(dataloader.dataset.all_img_ids))}"
 
     # TODO do we need this? learn horovod / mpi
     if hvd.rank() != 0:
