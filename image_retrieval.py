@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+from pprint import pprint
 from time import time
 
 import numpy as np
@@ -20,7 +21,7 @@ from utils.misc import NoOp
 
 
 def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset):
-    top_k_img_idx = torch.topk(scores.squeeze(), opts.top_k).indices
+    top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices
     top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
 
     # get flickr30k ids
@@ -71,8 +72,13 @@ def main(opts):
     model = amp.initialize(model, enabled=opts.fp16, opt_level='O2')
 
     scores = run_img_retrieval(model, dataloader)
-    top_k_paths = get_top_k_img_paths(scores, opts, dataloader.dataset)
-    LOGGER.info(f"Top-K matching images: {top_k_paths}")
+    if hvd.rank() == 0:
+        top_k_paths = get_top_k_img_paths(scores, opts, dataloader.dataset)
+
+        LOGGER.info(
+            f"======================== Results =========================\n"
+            f"{pprint(top_k_paths)}\n")
+        LOGGER.info("========================================================")
 
 
 @torch.no_grad()
@@ -85,7 +91,6 @@ def run_img_retrieval(model, dataloader):
                                len(dataloader.dataset.all_img_ids),
                                device=torch.device("cuda"),
                                dtype=torch.float16)
-
 
     for i, mini_batches in enumerate(dataloader):
         j = 0
@@ -106,7 +111,8 @@ def run_img_retrieval(model, dataloader):
 
     # all_score is the similarity matrix from input to images in the ds
     all_score = hvd.allgather(score_matrix)
-    assert all_score.size() == (1, len(dataloader.dataset.all_img_ids)), f"{all_score.size()} == {(1, len(dataloader.dataset.all_img_ids))}"
+    assert all_score.size() == (hvd.size(), len(dataloader.dataset.all_img_ids)), \
+        f"{all_score.size()} == {(hvd.size(), len(dataloader.dataset.all_img_ids))}"
 
     # TODO do we need this? learn horovod / mpi
     if hvd.rank() != 0:
