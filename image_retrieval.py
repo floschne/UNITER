@@ -1,7 +1,7 @@
 import argparse
 import os
+import pprint
 import re
-from pprint import pprint
 from time import time
 
 import numpy as np
@@ -75,9 +75,10 @@ def main(opts):
     if hvd.rank() == 0:
         top_k_paths = get_top_k_img_paths(scores, opts, dataloader.dataset)
 
+        results = pprint.pformat(top_k_paths, indent=4)
         LOGGER.info(
             f"======================== Results =========================\n"
-            f"{pprint(top_k_paths)}\n")
+            f"{results}\n")
         LOGGER.info("========================================================")
 
 
