@@ -13,7 +13,8 @@ horovodrun -np $NGPU python image_retrieval.py  \
 --model_config ./config/uniter-base.json \
 --meta_file ${UNITER_DATA_DIR}/txt_db/itm_flickr30k_test.db/meta.json \
 --top_k 5 \
---bs 10 \
+--bs 50 \
+--num_imgs 1000 \
 --fp16 \
---n_workers 1 \
+--n_workers 0 \
 --pin_mem

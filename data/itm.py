@@ -493,18 +493,23 @@ class ImageRetrievalDataset(Dataset):
                  img_db: DetectFeatLmdb,
                  meta_file_path: str,
                  batch_size: int,
+                 first_n_imgs: int = 1000
                  ):
         super().__init__()
         assert isinstance(img_db, DetectFeatLmdb)
         self.img_db = img_db
-        self.all_img_ids = list(self.img_db.name2nbb.keys())
+
+        if first_n_imgs > 0:
+            self.all_img_ids = list(self.img_db.name2nbb.keys())[:first_n_imgs]
+        else:
+            self.all_img_ids = list(self.img_db.name2nbb.keys())
 
         self.input_ids = get_bert_tokens(txt=query_txt)
 
-        meta = json.load(open(meta_file_path, 'r'))
-
-        self.cls_ = meta['CLS']
-        self.sep = meta['SEP']
+        with open(meta_file_path, 'r') as meta_file:
+            meta = json.load(meta_file)
+            self.cls_ = meta['CLS']
+            self.sep = meta['SEP']
 
         self.bs = batch_size
 
