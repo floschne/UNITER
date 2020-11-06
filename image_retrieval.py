@@ -21,7 +21,7 @@ from utils.misc import NoOp
 
 
 def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset):
-    top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices
+    top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices[0, :]
     top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
 
     # get flickr30k ids
