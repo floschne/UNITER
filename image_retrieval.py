@@ -1,8 +1,9 @@
 import argparse
-import os
 import pprint
 import re
+from pathlib import Path
 from time import time
+from typing import List
 
 import numpy as np
 import torch
@@ -20,21 +21,25 @@ from utils.logger import LOGGER
 from utils.misc import NoOp
 
 
-def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset):
+def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset) -> List[Path]:
     top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices[0, :]
-    top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
+    if opts.top_k > 1:
+        top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
+    else:
+        top_k_img_ids = [np.array(ds.all_img_ids)[top_k_img_idx.cpu()]]
 
     # get flickr30k ids
     prefix_pattern = re.compile(r"flickr30k_0*")
     suffix_pattern = re.compile(r"\.npz")
     ids = [str(suffix_pattern.sub("", prefix_pattern.sub("", top_k))) + ".jpg" for top_k in top_k_img_ids]
-    paths = [opts.img_ds + i for i in ids]
-    assert all([os.path.exists(f) for f in paths]), "Cannot find images! Path to dataset correct? <" + opts.img_ds + ">"
+
+    paths = [Path(opts.img_ds).joinpath(i) for i in ids]
+    assert all([p.exists() for p in paths]), "Cannot find images! Path to dataset correct? <" + opts.img_ds + ">"
 
     return paths
 
 
-def main(opts):
+def run_retrieval(opts):
     # horovod init
     hvd.init()
     n_gpu = hvd.size()
@@ -77,9 +82,14 @@ def main(opts):
 
         results = pprint.pformat(top_k_paths, indent=4)
         LOGGER.info(
-            f"======================== Results =========================\n"
-            f"{results}\n")
-        LOGGER.info("========================================================")
+            "\n======================== Results =========================\n"
+            f"{results}"
+            "\n==========================================================\n"
+        )
+
+        return top_k_paths
+    else:
+        return []
 
 
 @torch.no_grad()
@@ -97,7 +107,7 @@ def run_img_retrieval(model, dataloader):
         j = 0
 
         if hvd.rank() == 0:
-            pbar = tqdm(total=len(dataloader), desc="Mini-Batches")
+            pbar = tqdm(total=len(dataloader.dataset.all_img_ids), desc="Mini-Batches")
         else:
             pbar = NoOp()
 
@@ -106,7 +116,7 @@ def run_img_retrieval(model, dataloader):
             bs = scores.size(0)
             score_matrix.data[i, j:j + bs] = scores.data.squeeze(1).half()
             j += bs
-            pbar.update(1)
+            pbar.update(len(batch['input_ids']))
         assert j == score_matrix.size(1)
     model.train()
 
@@ -162,4 +172,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(args)
+    run_retrieval(args)
