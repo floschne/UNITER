@@ -1,7 +1,6 @@
 import argparse
 import pprint
 import re
-from pathlib import Path
 from time import time
 from typing import List
 
@@ -21,7 +20,7 @@ from utils.logger import LOGGER
 from utils.misc import NoOp
 
 
-def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset) -> List[Path]:
+def get_top_k_img_ids(scores, opts, ds: ImageRetrievalDataset) -> List[str]:
     top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices[0, :]
     if opts.top_k > 1:
         top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
@@ -32,11 +31,7 @@ def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset) -> List[Path]:
     prefix_pattern = re.compile(r"flickr30k_0*")
     suffix_pattern = re.compile(r"\.npz")
     ids = [str(suffix_pattern.sub("", prefix_pattern.sub("", top_k))) + ".jpg" for top_k in top_k_img_ids]
-
-    paths = [Path(opts.img_ds).joinpath(i) for i in ids]
-    assert all([p.exists() for p in paths]), "Cannot find images! Path to dataset correct? <" + opts.img_ds + ">"
-
-    return paths
+    return ids
 
 
 def run_retrieval(opts):
@@ -45,10 +40,8 @@ def run_retrieval(opts):
     n_gpu = hvd.size()
     device = torch.device("cuda", hvd.local_rank())
     torch.cuda.set_device(hvd.local_rank())
-    rank = hvd.rank()
     LOGGER.info("device: {} n_gpu: {}, rank: {}, "
-                "16-bits training: {}".format(
-        device, n_gpu, hvd.rank(), opts.fp16))
+                "16-bits training: {}".format(device, n_gpu, hvd.rank(), opts.fp16))
 
     # load images lmdb
     img_feat_db = DetectFeatLmdb(opts.img_feat_db, compress=False)
@@ -78,16 +71,16 @@ def run_retrieval(opts):
 
     scores = run_img_retrieval(model, dataloader)
     if hvd.rank() == 0:
-        top_k_paths = get_top_k_img_paths(scores, opts, dataloader.dataset)
+        top_k_ids = get_top_k_img_ids(scores, opts, dataloader.dataset)
 
-        results = pprint.pformat(top_k_paths, indent=4)
+        results = pprint.pformat(top_k_ids, indent=4)
         LOGGER.info(
-            "\n======================== Results =========================\n"
+            "\n======================== Results Image Names =========================\n"
             f"{results}"
-            "\n==========================================================\n"
+            "\n======================================================================\n"
         )
 
-        return top_k_paths
+        return top_k_ids
     else:
         return []
 
@@ -143,8 +136,6 @@ if __name__ == '__main__':
                         help="Textual Query for Image Retrieval")
     parser.add_argument("--img_feat_db", default=None, type=str,
                         help="path to image feature lmdb")
-    parser.add_argument("--img_ds", default=None, type=str,
-                        help="path to 'raw' Image dataset")
     parser.add_argument("--checkpoint", default=None, type=str,
                         help="path to model checkpoint binary")
     parser.add_argument("--model_config", default=None, type=str,
