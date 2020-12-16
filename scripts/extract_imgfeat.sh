@@ -10,7 +10,7 @@ echo "extracting image features..."
 if [ ! -d $OUT_DIR ]; then
     mkdir -p $OUT_DIR
 fi
-docker run --gpus '"'device=$CUDA_VISIBLE_DEVICES'"' --ipc=host --rm \
+nvidia-docker run --gpus '"'device=$CUDA_VISIBLE_DEVICES'"' --ipc=host --rm \
     --mount src=$IMG_DIR,dst=/img,type=bind,readonly \
     --mount src=$OUT_DIR,dst=/output,type=bind \
     -w /src chenrocks/butd-caffe:nlvr2 \
