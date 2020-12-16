@@ -69,7 +69,7 @@ def main(opts):
                                  collate_fn=itm_eval_collate)
     eval_dataloader = PrefetchLoader(eval_dataloader)
 
-    eval_log, results = evaluate(model, eval_dataloader)
+    eval_log, results = evaluate(model, eval_dataloader, t2i=opts.t2i, i2t=opts.i2t)
     if hvd.rank() == 0:
         if not exists(opts.output_dir) and rank == 0:
             os.makedirs(opts.output_dir)
@@ -80,22 +80,36 @@ def main(opts):
         with open(f'{opts.output_dir}/scores.json', 'w') as f:
             json.dump(eval_log, f)
         LOGGER.info(f'evaluation finished')
-        LOGGER.info(
-            f"======================== Results =========================\n"
-            f"image retrieval R1: {eval_log['img_r1']*100:.2f},\n"
-            f"image retrieval R5: {eval_log['img_r5']*100:.2f},\n"
-            f"image retrieval R10: {eval_log['img_r10']*100:.2f}\n"
-            f"text retrieval R1: {eval_log['txt_r1']*100:.2f},\n"
-            f"text retrieval R5: {eval_log['txt_r5']*100:.2f},\n"
-            f"text retrieval R10: {eval_log['txt_r10']*100:.2f}")
-        LOGGER.info("========================================================")
+        if opts.t2i:
+            LOGGER.info(
+                f"======================== Results image retrieval =========================\n"
+                f"image retrieval R1: {eval_log['img_r1']*100:.2f},\n"
+                f"image retrieval R5: {eval_log['img_r5']*100:.2f},\n"
+                f"image retrieval R10: {eval_log['img_r10']*100:.2f}")
+            LOGGER.info("========================================================")
+
+        if opts.i2t:
+            LOGGER.info(
+                f"======================== Results text retrieval =========================\n"
+                f"text retrieval R1: {eval_log['txt_r1']*100:.2f},\n"
+                f"text retrieval R5: {eval_log['txt_r5']*100:.2f},\n"
+                f"text retrieval R10: {eval_log['txt_r10']*100:.2f}")
+            LOGGER.info("========================================================")
 
 
 @torch.no_grad()
-def evaluate(model, eval_loader):
+def evaluate(model, eval_loader, t2i, i2t):
     model.eval()
     st = time()
-    LOGGER.info("start running Image/Text Retrieval evaluation ...")
+
+    if t2i and i2t:
+        retr_type = "Image and Text Retrieval"
+    elif i2t:
+        retr_type = "Text Retrieval"
+    if t2i:
+        retr_type = "Image Retrieval"
+
+    LOGGER.info(f"start running {retr_type} evaluation ...")
     score_matrix = inference(model, eval_loader)
     dset = eval_loader.dataset
     all_score = hvd.allgather(score_matrix)
@@ -107,7 +121,7 @@ def evaluate(model, eval_loader):
         return {}, tuple()
     # NOTE: only use rank0 to compute final scores
     eval_log = itm_eval(all_score, all_txt_ids, all_img_ids,
-                        dset.txt2img, dset.img2txts)
+                        dset.txt2img, dset.img2txts, t2i, i2t)
 
     results = (all_score, all_txt_ids, all_img_ids)
     tot_time = time()-st
@@ -127,6 +141,10 @@ if __name__ == "__main__":
                         help="model checkpoint binary")
     parser.add_argument("--model_config", default=None, type=str,
                         help="model config json")
+    parser.add_argument("--i2t", default=False, type=bool, action='store_true',
+                        help="If true run image-text retrieval (image captioning)")
+    parser.add_argument("--t2i", default=True, type=bool, action='store_true',
+                        help="If true run text-image retrieval (image search)")
     parser.add_argument(
         "--output_dir", default=None, type=str,
         help="The output directory where the inference results will be "
