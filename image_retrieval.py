@@ -1,8 +1,8 @@
 import argparse
-import os
 import pprint
 import re
 from time import time
+from typing import List
 
 import numpy as np
 import torch
@@ -20,30 +20,28 @@ from utils.logger import LOGGER
 from utils.misc import NoOp
 
 
-def get_top_k_img_paths(scores, opts, ds: ImageRetrievalDataset):
+def get_top_k_img_ids(scores, opts, ds: ImageRetrievalDataset) -> List[str]:
     top_k_img_idx = torch.topk(scores, opts.top_k, dim=1).indices[0, :]
-    top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
+    if opts.top_k > 1:
+        top_k_img_ids = np.array(ds.all_img_ids)[top_k_img_idx.cpu()]
+    else:
+        top_k_img_ids = [np.array(ds.all_img_ids)[top_k_img_idx.cpu()]]
 
     # get flickr30k ids
     prefix_pattern = re.compile(r"flickr30k_0*")
     suffix_pattern = re.compile(r"\.npz")
     ids = [str(suffix_pattern.sub("", prefix_pattern.sub("", top_k))) + ".jpg" for top_k in top_k_img_ids]
-    paths = [opts.img_ds + i for i in ids]
-    assert all([os.path.exists(f) for f in paths]), "Cannot find images! Path to dataset correct? <" + opts.img_ds + ">"
-
-    return paths
+    return ids
 
 
-def main(opts):
+def run_retrieval(opts):
     # horovod init
     hvd.init()
     n_gpu = hvd.size()
     device = torch.device("cuda", hvd.local_rank())
     torch.cuda.set_device(hvd.local_rank())
-    rank = hvd.rank()
     LOGGER.info("device: {} n_gpu: {}, rank: {}, "
-                "16-bits training: {}".format(
-        device, n_gpu, hvd.rank(), opts.fp16))
+                "16-bits training: {}".format(device, n_gpu, hvd.rank(), opts.fp16))
 
     # load images lmdb
     img_feat_db = DetectFeatLmdb(opts.img_feat_db, compress=False)
@@ -73,13 +71,18 @@ def main(opts):
 
     scores = run_img_retrieval(model, dataloader)
     if hvd.rank() == 0:
-        top_k_paths = get_top_k_img_paths(scores, opts, dataloader.dataset)
+        top_k_ids = get_top_k_img_ids(scores, opts, dataloader.dataset)
 
-        results = pprint.pformat(top_k_paths, indent=4)
+        results = pprint.pformat(top_k_ids, indent=4)
         LOGGER.info(
-            f"======================== Results =========================\n"
-            f"{results}\n")
-        LOGGER.info("========================================================")
+            "\n======================== Results Image Names =========================\n"
+            f"{results}"
+            "\n======================================================================\n"
+        )
+
+        return top_k_ids
+    else:
+        return []
 
 
 @torch.no_grad()
@@ -97,7 +100,7 @@ def run_img_retrieval(model, dataloader):
         j = 0
 
         if hvd.rank() == 0:
-            pbar = tqdm(total=len(dataloader), desc="Mini-Batches")
+            pbar = tqdm(total=len(dataloader.dataset.all_img_ids), desc="Mini-Batches")
         else:
             pbar = NoOp()
 
@@ -106,7 +109,7 @@ def run_img_retrieval(model, dataloader):
             bs = scores.size(0)
             score_matrix.data[i, j:j + bs] = scores.data.squeeze(1).half()
             j += bs
-            pbar.update(1)
+            pbar.update(len(batch['input_ids']))
         assert j == score_matrix.size(1)
     model.train()
 
@@ -133,8 +136,6 @@ if __name__ == '__main__':
                         help="Textual Query for Image Retrieval")
     parser.add_argument("--img_feat_db", default=None, type=str,
                         help="path to image feature lmdb")
-    parser.add_argument("--img_ds", default=None, type=str,
-                        help="path to 'raw' Image dataset")
     parser.add_argument("--checkpoint", default=None, type=str,
                         help="path to model checkpoint binary")
     parser.add_argument("--model_config", default=None, type=str,
@@ -162,4 +163,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(args)
+    run_retrieval(args)
