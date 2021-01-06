@@ -11,13 +11,13 @@ from horovod import torch as hvd
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from data import (PrefetchLoader,
-                  DetectFeatLmdb,
-                  ImageRetrievalDataset, itm_val_collate)
-from model.itm import UniterForImageTextRetrieval
-from utils.const import IMG_DIM
-from utils.logger import LOGGER
-from utils.misc import NoOp
+from models.uniter.data import (PrefetchLoader,
+                                DetectFeatLmdb,
+                                ImageRetrievalDataset, itm_val_collate)
+from models.uniter.model.itm import UniterForImageTextRetrieval
+from models.uniter.utils.const import IMG_DIM
+from models.uniter.utils.logger import LOGGER
+from models.uniter.utils.misc import NoOp
 
 
 def get_top_k_img_ids(scores, opts, ds: ImageRetrievalDataset) -> List[str]:
