@@ -104,7 +104,7 @@ def evaluate(model, eval_loader):
 
 
 @torch.no_grad()
-def inference(model, eval_loader, t2i, i2t):
+def inference(model, eval_loader):
     model.eval()
     if hvd.rank() == 0:
         pbar = tqdm(total=len(eval_loader))

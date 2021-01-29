@@ -141,9 +141,9 @@ if __name__ == "__main__":
                         help="model checkpoint binary")
     parser.add_argument("--model_config", default=None, type=str,
                         help="model config json")
-    parser.add_argument("--i2t", default=False, type=bool, action='store_true',
+    parser.add_argument("--i2t", default=False, action='store_true',
                         help="If true run image-text retrieval (image captioning)")
-    parser.add_argument("--t2i", default=True, type=bool, action='store_true',
+    parser.add_argument("--t2i", default=True, action='store_true',
                         help="If true run text-image retrieval (image search)")
     parser.add_argument(
         "--output_dir", default=None, type=str,
