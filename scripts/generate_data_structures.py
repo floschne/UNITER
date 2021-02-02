@@ -66,7 +66,9 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     txt2img = {
         f"{wid}": f"{get_feat_file_name(wid)}" for wid in test_df['wikicaps_id']
     }
-    json.dump(txt2img, txt2img_p)
+
+    with open(txt2img_p, "w", encoding="utf8") as fp:
+        json.dump(txt2img, fp)
 
     # img2txts.json
     # structure: "<FEAT_FILE_NAME>.npz": ["ID"]
@@ -77,7 +79,9 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     img2txts = {
         img: [txt] for txt, img in txt2img.items()
     }
-    json.dump(img2txts, img2txts_p)
+
+    with open(img2txts_p, "w", encoding="utf8") as fp:
+        json.dump(img2txts, fp)
 
 
 def generate_text_lmdb(opts, test_df: pd.DataFrame):
