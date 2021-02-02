@@ -1,10 +1,10 @@
 import json
+import sys
 from pathlib import Path
 
 import msgpack_numpy as mpn
 from pytorch_pretrained_bert import BertTokenizer
 from toolz import curry
-import sys
 
 sys.path.append('..')
 from data.data import TxtLmdb
@@ -83,6 +83,20 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     with open(img2txts_p, "w", encoding="utf8") as fp:
         json.dump(img2txts, fp)
 
+    # id2len.json
+    # structure: "<ID>": <len(BERT TOKEN IDS)>
+    id2len_p = Path(output_dir).joinpath('txt_db/id2len.json')
+    if not id2len_p.exists():
+        id2len_p.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Generating id2len.json at {id2len_p}")
+    id2len = {
+        f"{row['wikicaps_id']}": len(row['input_ids']) for _, row in test_df.iterrows()
+    }
+
+    with open(id2len_p, "w", encoding="utf8") as fp:
+        json.dump(id2len, fp)
+
+
 
 def generate_text_lmdb(opts, test_df: pd.DataFrame):
     # we only need
@@ -118,6 +132,7 @@ def generate_text_data(test_df: pd.DataFrame, opts):
 
 def generate_img_data(test_df: pd.DataFrame, opts):
     raise NotImplementedError("Not yet implemented!")
+
 
 def generate(opts):
     test_df = load_test_dataframe(opts.wicsmmir_dir)
