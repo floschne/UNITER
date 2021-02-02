@@ -58,6 +58,8 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     # txt2img.json
     # structure: "<ID>": "<FEAT_FILE_NAME>.npz"
     txt2img_p = Path(output_dir).joinpath('txt_db/txt2img.json')
+    if not txt2img_p.exists():
+        txt2img_p.parent.mkdir(parents=True, exist_ok=True)
     print(f"Generating img2txts.json at {txt2img_p}")
     txt2img = {
         f"{wid}": f"{get_feat_file_name(wid)}" for wid in test_df['wikicaps_id']
@@ -67,6 +69,8 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     # img2txts.json
     # structure: "<FEAT_FILE_NAME>.npz": ["ID"]
     img2txts_p = Path(output_dir).joinpath('txt_db/img2txts.json')
+    if not img2txts_p.exists():
+        img2txts_p.parent.mkdir(parents=True, exist_ok=True)
     print(f"Generating img2txts.json at {img2txts_p}")
     img2txts = {
         img: [txt] for txt, img in txt2img.items()
@@ -80,6 +84,8 @@ def generate_text_lmdb(opts, test_df: pd.DataFrame):
     #   'input_ids' -> BERT Token IDs (without SEP and CLS etc)
     #   'raw' -> Raw caption (optional)
     out_p = Path(opts.output_dir).joinpath('txt_db/')
+    if not out_p.exists():
+        out_p.mkdir(parents=True, exist_ok=True)
     print(f"Generating TxtLmdb at {out_p}")
     test_df = add_bert_input_ids(test_df)
     test_df = add_img_fname(test_df)
