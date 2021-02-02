@@ -96,7 +96,7 @@ def generate_text_lmdb(opts, test_df: pd.DataFrame):
     test_df = add_bert_input_ids(test_df)
     test_df = add_img_fname(test_df)
 
-    txt_lmdb = TxtLmdb(out_p, readonly=False)
+    txt_lmdb = TxtLmdb(str(out_p), readonly=False)
     for _, row in test_df.iterrows():
         key = row['wikicaps_id']
         value = {'raw': row['caption'],
