@@ -123,11 +123,12 @@ def generate_text_lmdb(opts, test_df: pd.DataFrame):
 
 
 def generate_text_data(test_df: pd.DataFrame, opts):
+    # generate the lmdb
+    generate_text_lmdb(opts, test_df)
+    
     # generate the json files
     generate_text_image_json_mappings(test_df, opts.output_dir)
 
-    # generate the lmdb
-    generate_text_lmdb(opts, test_df)
 
 
 def generate_img_data(test_df: pd.DataFrame, opts):
