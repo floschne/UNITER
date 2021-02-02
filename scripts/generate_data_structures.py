@@ -4,7 +4,9 @@ from pathlib import Path
 import msgpack_numpy as mpn
 from pytorch_pretrained_bert import BertTokenizer
 from toolz import curry
+import sys
 
+sys.path.append('..')
 from data.data import TxtLmdb
 
 mpn.patch()
