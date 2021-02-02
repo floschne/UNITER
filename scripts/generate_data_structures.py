@@ -136,9 +136,9 @@ if __name__ == '__main__':
                         help="The path to WICSMMIR features and DataFrames.")
     parser.add_argument("--output_dir", type=str, required=True,
                         help="Directory where the generated data gets stored.")
-    parser.add_argument("--txt", default=True, action='store_true',
+    parser.add_argument("--txt", default=False, action='store_true',
                         help="If set, the Text Data Structures are generated.")
-    parser.add_argument("--img", default=True, action='store_true',
+    parser.add_argument("--img", default=False, action='store_true',
                         help="If set, the Image Data Structures are generated.")
 
     opts = parser.parse_args()
