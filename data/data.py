@@ -65,6 +65,7 @@ class DetectFeatLmdb(object):
         self.conf_th = conf_th
         self.min_bb = min_bb
         self.max_bb = max_bb
+        self.write_cnt = None
 
         if conf_th == -1:
             db_name = f'feat_numbb{num_bb}'
@@ -94,7 +95,6 @@ class DetectFeatLmdb(object):
                                  readonly=True, create=False,
                                  readahead=not _check_distributed())
             self.txn = self.env.begin(buffers=True)
-            self.write_cnt = None
         else:
             # prepro
             self.env = lmdb.open(f'{img_dir}/{db_name}',
