@@ -1,5 +1,5 @@
-import multiprocessing as mp
 import json
+import multiprocessing as mp
 import sys
 from pathlib import Path
 
@@ -102,14 +102,16 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     with open(id2len_p, "w", encoding="utf8") as fp:
         json.dump(id2len, fp)
 
-def load_text_data(idx, row):
-    key = row['wikicaps_id']
-    value = {'raw': row['caption'],
-             'input_ids': row['input_ids'],
-             'img_fname': row['img_fname']
+
+def load_text_data(row):
+    key = row[1]['wikicaps_id']
+    value = {'raw': row[1]['caption'],
+             'input_ids': row[1]['input_ids'],
+             'img_fname': row[1]['img_fname']
              }
 
     return key, value
+
 
 def generate_text_lmdb(opts, test_df: pd.DataFrame):
     # we only need
@@ -183,6 +185,7 @@ def get_img_data_for_uniter(roi_feats):
 
     return uniter_data
 
+
 def load_img_data(wid: int):
     key = get_feat_file_name(wid)
     # load the features from npz file
@@ -191,6 +194,7 @@ def load_img_data(wid: int):
     value = get_img_data_for_uniter(roi_feats)
 
     return key, value
+
 
 def generate_img_lmdb(opts, test_df):
     # we only need since we have fixed number of bboxes (=36)
