@@ -7,7 +7,6 @@ import msgpack_numpy as mpn
 import numpy as np
 from pandarallel import pandarallel
 from pytorch_pretrained_bert import BertTokenizer
-from toolz import curry
 from tqdm import tqdm
 
 sys.path.append('..')
@@ -19,8 +18,7 @@ import pandas as pd
 import argparse
 
 
-@curry
-def get_bert_token_ids(tokenizer, text):
+def get_bert_token_ids(text, tokenizer):
     ids = []
     for word in text.strip().split():
         ws = tokenizer.tokenize(word)
@@ -34,8 +32,7 @@ def get_bert_token_ids(tokenizer, text):
 def add_bert_input_ids(test_df: pd.DataFrame):
     print(f"Generating BERT Token IDs for {len(test_df)} captions...")
     toker = BertTokenizer.from_pretrained('bert-base-cased', do_lower_case=False)
-    tokenizer = get_bert_token_ids(toker)
-    test_df['input_ids'] = test_df['caption'].parallel_apply(tokenizer, axis=1)
+    test_df['input_ids'] = test_df['caption'].parallel_apply(get_bert_token_ids, args=(toker,))
     return test_df
 
 
