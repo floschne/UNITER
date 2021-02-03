@@ -102,6 +102,14 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
     with open(id2len_p, "w", encoding="utf8") as fp:
         json.dump(id2len, fp)
 
+def load_text_data(idx, row):
+    key = row['wikicaps_id']
+    value = {'raw': row['caption'],
+             'input_ids': row['input_ids'],
+             'img_fname': row['img_fname']
+             }
+
+    return key, value
 
 def generate_text_lmdb(opts, test_df: pd.DataFrame):
     # we only need
@@ -116,14 +124,9 @@ def generate_text_lmdb(opts, test_df: pd.DataFrame):
     test_df = add_img_fname(test_df)
 
     txt_lmdb = TxtLmdb(str(out_p), readonly=False)
-    with tqdm(total=len(test_df)) as pbar:
-        for _, row in test_df.iterrows():
-            key = row['wikicaps_id']
-            value = {'raw': row['caption'],
-                     'input_ids': row['input_ids'],
-                     'img_fname': row['img_fname']
-                     }
-
+    rows = test_df.iterrows()
+    with mp.Pool(opts.n_workers) as pool, tqdm(total=len(test_df)) as pbar:
+        for (key, value) in pool.imap_unordered(load_text_data, rows, chunksize=128):
             # store in TxtLmdb
             txt_lmdb[str(key)] = value
             pbar.update(1)
@@ -243,6 +246,8 @@ if __name__ == '__main__':
                         help="If set, the Text Data Structures are generated.")
     parser.add_argument("--img", default=False, action='store_true',
                         help="If set, the Image Data Structures are generated.")
+    parser.add_argument("--n_workers", default=8, type=int,
+                        help="Number of parallel workers to generate the data structures")
 
     opts = parser.parse_args()
 
