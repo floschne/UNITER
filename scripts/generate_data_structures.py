@@ -202,7 +202,7 @@ def generate_img_lmdb(opts, test_df):
                               readonly=False)
     with tqdm(total=len(test_df)) as pbar:
         for _, row in test_df.iterrows():
-            key = row['img_fname']
+            key = get_feat_file_name(row['wikicaps_id'])
             # load the features from npz file
             roi_feats = load_roi_feats(opts.wicsmmir_dir, row['wikicaps_id'])
             # get uniter specific data structure
@@ -216,7 +216,6 @@ def generate_img_lmdb(opts, test_df):
 def generate_img_data(test_df: pd.DataFrame, opts):
     # generate the lmdb
     generate_img_lmdb(opts, test_df)
-    raise NotImplementedError("Not yet implemented!")
 
 
 def generate(opts):
