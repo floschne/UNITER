@@ -55,8 +55,11 @@ def get_features_path(wicsmmir_dir: str):
     return Path(wicsmmir_dir).joinpath('features_36')
 
 
-def get_feat_file_name(wid: int):
-    return f"wikicaps_{wid}.npz"
+def get_feat_file_name(wid: int, wicsmmir_dir=None):
+    fname = f"wikicaps_{wid}.npz"
+    if wicsmmir_dir is not None:
+        return get_features_path(wicsmmir_dir).joinpath(fname)
+    return fname
 
 
 def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
@@ -135,10 +138,9 @@ def generate_text_data(test_df: pd.DataFrame, opts):
 
 
 def load_roi_feats(wicsmmir_dir: str, wid: int):
-    fname = get_feat_file_name(wid)
-    feat_p = Path(wicsmmir_dir).joinpath(fname)
-    assert feat_p.exists()
-    return np.load(feat_p, allow_pickle=True)
+    fname_p = get_feat_file_name(wid, wicsmmir_dir)
+    assert fname_p.exists()
+    return np.load(fname_p, allow_pickle=True)
 
 
 def get_norm_bb(bboxes, image_w, image_h):
