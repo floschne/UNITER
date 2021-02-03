@@ -1,13 +1,16 @@
+import io
 import json
 import sys
 from pathlib import Path
 
 import msgpack_numpy as mpn
+import numpy as np
 from pytorch_pretrained_bert import BertTokenizer
 from toolz import curry
+from tqdm import tqdm
 
 sys.path.append('..')
-from data.data import TxtLmdb
+from data.data import TxtLmdb, DetectFeatLmdb
 
 mpn.patch()
 import pandas as pd
@@ -97,7 +100,6 @@ def generate_text_image_json_mappings(test_df: pd.DataFrame, output_dir: str):
         json.dump(id2len, fp)
 
 
-
 def generate_text_lmdb(opts, test_df: pd.DataFrame):
     # we only need
     #   'img_fname' -> feature npz
@@ -111,27 +113,107 @@ def generate_text_lmdb(opts, test_df: pd.DataFrame):
     test_df = add_img_fname(test_df)
 
     txt_lmdb = TxtLmdb(str(out_p), readonly=False)
-    for _, row in test_df.iterrows():
-        key = row['wikicaps_id']
-        value = {'raw': row['caption'],
-                 'input_ids': row['input_ids'],
-                 'img_fname': row['img_fname']
-                 }
+    with tqdm(total=len(test_df)) as pbar:
+        for _, row in test_df.iterrows():
+            key = row['wikicaps_id']
+            value = {'raw': row['caption'],
+                     'input_ids': row['input_ids'],
+                     'img_fname': row['img_fname']
+                     }
 
-        # store in TxtLmdb
-        txt_lmdb[str(key)] = value
+            # store in TxtLmdb
+            txt_lmdb[str(key)] = value
+            pbar.update(1)
 
 
 def generate_text_data(test_df: pd.DataFrame, opts):
     # generate the lmdb
     generate_text_lmdb(opts, test_df)
-    
+
     # generate the json files
     generate_text_image_json_mappings(test_df, opts.output_dir)
 
 
+def load_roi_feats(wicsmmir_dir: str, wid: int):
+    fname = get_feat_file_name(wid)
+    feat_p = Path(wicsmmir_dir).joinpath(fname)
+    assert feat_p.exists()
+    return np.load(feat_p, allow_pickle=True)
+
+
+def get_norm_bb(bboxes, image_w, image_h):
+    box_width = bboxes[:, 2] - bboxes[:, 0]
+    box_height = bboxes[:, 3] - bboxes[:, 1]
+    scaled_width = box_width / image_w
+    scaled_height = box_height / image_h
+    scaled_x = bboxes[:, 0] / image_w
+    scaled_y = bboxes[:, 1] / image_h
+
+    box_width = box_width[..., np.newaxis]
+    box_height = box_height[..., np.newaxis]
+    scaled_width = scaled_width[..., np.newaxis]
+    scaled_height = scaled_height[..., np.newaxis]
+    scaled_x = scaled_x[..., np.newaxis]
+    scaled_y = scaled_y[..., np.newaxis]
+
+    normalized_bbox = np.concatenate((scaled_x, scaled_y,
+                                      scaled_x + scaled_width,
+                                      scaled_y + scaled_height,
+                                      scaled_width, scaled_height), axis=1)
+
+    return normalized_bbox
+
+
+def get_in_mem_npz(roi_feats):
+    # we only need norm_bb and x (conf and soft_labels are not necessary because we have fixed num_bb = 36)
+    bboxes = roi_feats['bbox']
+    image_w = roi_feats['image_w']
+    image_h = roi_feats['image_h']
+
+    norm_bb = get_norm_bb(bboxes, image_w, image_h)
+    features = roi_feats['x']
+
+    in_mem_npz = io.BytesIO()
+    np.savez_compressed(in_mem_npz,
+                        norm_bb=norm_bb,
+                        features=features)
+
+    return in_mem_npz
+
+
+def generate_img_lmdb(opts, test_df):
+    # we only need since we have fixed number of bboxes (=36)
+    #   'features' -> features
+    #   'norm_bb' -> normalized bbox
+
+    out_p = Path(opts.output_dir).joinpath('img_db')
+    if not out_p.exists():
+        out_p.mkdir(parents=True, exist_ok=True)
+    print(f"Generating DetectFeatLmdb at {out_p}")
+
+    img_lmdb = DetectFeatLmdb(img_dir=str(out_p),
+                              conf_th=-1,
+                              max_bb=36,
+                              min_bb=36,
+                              num_bb=36,
+                              compress=True,
+                              readonly=False)
+    with tqdm(total=len(test_df)) as pbar:
+        for _, row in test_df.iterrows():
+            key = row['img_fname']
+            # load the features from npz file
+            roi_feats = load_roi_feats(opts.wicsmmir_dir, row['wikicaps_id'])
+            # get uniter specific data structure
+            value = get_in_mem_npz(roi_feats)
+
+            # store in DetectFeatLmdb
+            img_lmdb[str(key)] = value
+            pbar.update(1)
+
 
 def generate_img_data(test_df: pd.DataFrame, opts):
+    # generate the lmdb
+    generate_img_lmdb(opts, test_df)
     raise NotImplementedError("Not yet implemented!")
 
 
