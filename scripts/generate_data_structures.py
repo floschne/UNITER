@@ -8,6 +8,7 @@ import numpy as np
 from pytorch_pretrained_bert import BertTokenizer
 from toolz import curry
 from tqdm import tqdm
+from pandarallel import pandarallel
 
 sys.path.append('..')
 from data.data import TxtLmdb, DetectFeatLmdb
@@ -34,7 +35,7 @@ def add_bert_input_ids(test_df: pd.DataFrame):
     print(f"Generating BERT Token IDs for {len(test_df)} captions...")
     toker = BertTokenizer.from_pretrained('bert-base-cased', do_lower_case=False)
     tokenizer = get_bert_token_ids(toker)
-    test_df['input_ids'] = test_df['caption'].apply(tokenizer)
+    test_df['input_ids'] = test_df['caption'].parallel_apply(tokenizer)
     return test_df
 
 
@@ -254,5 +255,7 @@ if __name__ == '__main__':
                         help="Number of parallel workers to generate the data structures")
 
     opts = parser.parse_args()
+
+    pandarallel.initialize(nb_workers=opts.n_workers)
 
     generate(opts)
