@@ -1,4 +1,3 @@
-import io
 import json
 import sys
 from pathlib import Path
@@ -166,7 +165,7 @@ def get_norm_bb(bboxes, image_w, image_h):
     return normalized_bbox
 
 
-def get_in_mem_npz(roi_feats):
+def get_img_data_for_uniter(roi_feats):
     # we only need norm_bb and x (conf and soft_labels are not necessary because we have fixed num_bb = 36)
     bboxes = roi_feats['bbox']
     image_w = roi_feats['image_w']
@@ -175,12 +174,10 @@ def get_in_mem_npz(roi_feats):
     norm_bb = get_norm_bb(bboxes, image_w, image_h)
     features = roi_feats['x']
 
-    in_mem_npz = io.BytesIO()
-    np.savez_compressed(in_mem_npz,
-                        norm_bb=norm_bb,
-                        features=features)
+    uniter_data = {'norm_bb': norm_bb,
+                   'features': features}
 
-    return in_mem_npz
+    return uniter_data
 
 
 def generate_img_lmdb(opts, test_df):
@@ -206,7 +203,7 @@ def generate_img_lmdb(opts, test_df):
             # load the features from npz file
             roi_feats = load_roi_feats(opts.wicsmmir_dir, row['wikicaps_id'])
             # get uniter specific data structure
-            value = get_in_mem_npz(roi_feats)
+            value = get_img_data_for_uniter(roi_feats)
 
             # store in DetectFeatLmdb
             img_lmdb[str(key)] = value
