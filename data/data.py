@@ -4,28 +4,41 @@ Licensed under the MIT license.
 
 Dataset interfaces
 """
-from collections import defaultdict
-from contextlib import contextmanager
 import io
 import json
+from collections import defaultdict
+from contextlib import contextmanager
 from os.path import exists
 
-import numpy as np
-import torch
-from torch.utils.data import Dataset, ConcatDataset
 import horovod.torch as hvd
-from tqdm import tqdm
 import lmdb
-from lz4.frame import compress, decompress
-
 import msgpack
 import msgpack_numpy
+import numpy as np
+import torch
+from lz4.frame import compress, decompress
+from torch.utils.data import Dataset, ConcatDataset
+from tqdm import tqdm
+
 msgpack_numpy.patch()
+
+
+def dumps_npz(dump, compress=False):
+    with io.BytesIO() as writer:
+        if compress:
+            np.savez_compressed(writer, **dump, allow_pickle=True)
+        else:
+            np.savez(writer, **dump, allow_pickle=True)
+        return writer.getvalue()
+
+
+def dumps_msgpack(dump):
+    return msgpack.dumps(dump, use_bin_type=True)
 
 
 def _fp16_to_fp32(feat_dict):
     out = {k: arr.astype(np.float32)
-           if arr.dtype == np.float16 else arr
+    if arr.dtype == np.float16 else arr
            for k, arr in feat_dict.items()}
     return out
 
@@ -46,9 +59,13 @@ def _check_distributed():
 
 
 class DetectFeatLmdb(object):
-    def __init__(self, img_dir, conf_th=0.2, max_bb=100, min_bb=10, num_bb=36,
-                 compress=True):
+    def __init__(self, img_dir, conf_th=0.2, max_bb=100, min_bb=10, num_bb=36, compress=True, readonly=True):
+        self.readonly = readonly
         self.img_dir = img_dir
+        self.conf_th = conf_th
+        self.min_bb = min_bb
+        self.max_bb = max_bb
+
         if conf_th == -1:
             db_name = f'feat_numbb{num_bb}'
             self.name2nbb = defaultdict(lambda: num_bb)
@@ -69,11 +86,23 @@ class DetectFeatLmdb(object):
                 db_name = 'all_compressed'
             else:
                 db_name = 'all'
-        # only read ahead on single node training
-        self.env = lmdb.open(f'{img_dir}/{db_name}',
-                             readonly=True, create=False,
-                             readahead=not _check_distributed())
-        self.txn = self.env.begin(buffers=True)
+
+        if readonly:
+            # training
+            # only read ahead on single node training
+            self.env = lmdb.open(f'{img_dir}/{db_name}',
+                                 readonly=True, create=False,
+                                 readahead=not _check_distributed())
+            self.txn = self.env.begin(buffers=True)
+            self.write_cnt = None
+        else:
+            # prepro
+            self.env = lmdb.open(f'{img_dir}/{db_name}',
+                                 readonly=False, create=True,
+                                 map_size=4 * 1024 ** 4)
+            self.txn = self.env.begin(write=True)
+            self.write_cnt = 0
+
         if self.name2nbb is None:
             self.name2nbb = self._compute_nbb()
 
@@ -89,12 +118,13 @@ class DetectFeatLmdb(object):
             else:
                 img_dump = msgpack.loads(dump, raw=False)
                 confs = img_dump['conf']
-            name2nbb[fname] = compute_num_bb(confs, self.conf_th,
-                                             self.min_bb, self.max_bb)
+            name2nbb[fname] = compute_num_bb(confs, self.conf_th, self.min_bb, self.max_bb)
 
         return name2nbb
 
     def __del__(self):
+        if self.write_cnt:
+            self.txn.commit()
         self.env.close()
 
     def get_dump(self, file_name):
@@ -125,6 +155,24 @@ class DetectFeatLmdb(object):
         img_bb = torch.tensor(img_dump['norm_bb'][:nbb, :]).float()
         return img_feat, img_bb
 
+    def __setitem__(self, key, value):
+        # NOTE: not thread safe
+        if self.readonly:
+            raise ValueError('readonly image DB')
+
+        if self.compress:
+            dump = dumps_npz(value, compress=True)
+        else:
+            dump = dumps_msgpack(value)
+        ret = self.txn.put(key.encode('utf-8'), dump)
+
+        self.write_cnt += 1
+        if self.write_cnt % 1000 == 0:
+            self.txn.commit()
+            self.txn = self.env.begin(write=True)
+            self.write_cnt = 0
+        return ret
+
 
 @contextmanager
 def open_lmdb(db_dir, readonly=False):
@@ -148,7 +196,7 @@ class TxtLmdb(object):
         else:
             # prepro
             self.env = lmdb.open(db_dir, readonly=False, create=True,
-                                 map_size=4 * 1024**4)
+                                 map_size=4 * 1024 ** 4)
             self.txn = self.env.begin(write=True)
             self.write_cnt = 0
 
@@ -247,7 +295,7 @@ class DetectFeatTxtTokDataset(Dataset):
 
     def _get_img_feat(self, fname):
         img_feat, bb = self.img_db[fname]
-        img_bb = torch.cat([bb, bb[:, 4:5]*bb[:, 5:]], dim=-1)
+        img_bb = torch.cat([bb, bb[:, 4:5] * bb[:, 5:]], dim=-1)
         num_bb = img_feat.size(0)
         return img_feat, img_bb, num_bb
 
@@ -274,13 +322,14 @@ def get_gather_index(txt_lens, num_bbs, batch_size, max_len, out_size):
                                 ).unsqueeze(0).repeat(batch_size, 1)
 
     for i, (tl, nbb) in enumerate(zip(txt_lens, num_bbs)):
-        gather_index.data[i, tl:tl+nbb] = torch.arange(max_len, max_len+nbb,
-                                                       dtype=torch.long).data
+        gather_index.data[i, tl:tl + nbb] = torch.arange(max_len, max_len + nbb,
+                                                         dtype=torch.long).data
     return gather_index
 
 
 class ConcatDatasetWithLens(ConcatDataset):
     """ A thin wrapper on pytorch concat dataset for lens batching """
+
     def __init__(self, datasets):
         super().__init__(datasets)
         self.lens = [l for dset in datasets for l in dset.lens]
@@ -292,6 +341,7 @@ class ConcatDatasetWithLens(ConcatDataset):
         def run_all(*args, **kwargs):
             return [dset.__getattribute__(name)(*args, **kwargs)
                     for dset in self.datasets]
+
         return run_all
 
 
