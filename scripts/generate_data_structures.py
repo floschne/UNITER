@@ -177,6 +177,7 @@ def get_img_data_for_uniter(roi_feats):
 
     norm_bb = get_norm_bb(bboxes, image_w, image_h)
     features = roi_feats['x']
+    features = features.astype(np.float16)
 
     uniter_data = {'norm_bb': norm_bb,
                    'features': features}
