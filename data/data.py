@@ -66,6 +66,7 @@ class DetectFeatLmdb(object):
         self.min_bb = min_bb
         self.max_bb = max_bb
         self.write_cnt = None
+        self.env = None
 
         if conf_th == -1:
             db_name = f'feat_numbb{num_bb}'
@@ -125,7 +126,8 @@ class DetectFeatLmdb(object):
     def __del__(self):
         if self.write_cnt:
             self.txn.commit()
-        self.env.close()
+        if self.env:
+            self.env.close()
 
     def get_dump(self, file_name):
         # hack for MRC
