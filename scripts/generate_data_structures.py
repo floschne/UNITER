@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import json
 import sys
 from pathlib import Path
@@ -179,6 +180,14 @@ def get_img_data_for_uniter(roi_feats):
 
     return uniter_data
 
+def load_img_data(wid: int):
+    key = get_feat_file_name(wid)
+    # load the features from npz file
+    roi_feats = load_roi_feats(opts.wicsmmir_dir, wid)
+    # get uniter specific data structure
+    value = get_img_data_for_uniter(roi_feats)
+
+    return key, value
 
 def generate_img_lmdb(opts, test_df):
     # we only need since we have fixed number of bboxes (=36)
@@ -197,14 +206,12 @@ def generate_img_lmdb(opts, test_df):
                               num_bb=36,
                               compress=True,
                               readonly=False)
-    with tqdm(total=len(test_df)) as pbar:
-        for _, row in test_df.iterrows():
-            key = get_feat_file_name(row['wikicaps_id'])
-            # load the features from npz file
-            roi_feats = load_roi_feats(opts.wicsmmir_dir, row['wikicaps_id'])
-            # get uniter specific data structure
-            value = get_img_data_for_uniter(roi_feats)
 
+    wikicaps_ids = test_df['wikicaps_id'].to_numpy()
+
+    with mp.Pool(opts.n_workers) as pool, tqdm(total=len(test_df)) as pbar:
+        for (key, value) in pool.imap_unordered(load_img_data, wikicaps_ids, chunksize=128):
+            assert key is not None and value is not None
             # store in DetectFeatLmdb
             img_lmdb[str(key)] = value
             pbar.update(1)
