@@ -68,7 +68,7 @@ def main(opts):
     meta['SEP'] = toker.convert_tokens_to_ids(['[SEP]'])[0]
     meta['MASK'] = toker.convert_tokens_to_ids(['[MASK]'])[0]
     meta['v_range'] = (toker.convert_tokens_to_ids('!')[0],
-                       len(toker.vocab))
+                       len(toker.full_vocab))
     with open(f'{opts.output}/meta.json', 'w') as f:
         json.dump(vars(opts), f, indent=4)
 

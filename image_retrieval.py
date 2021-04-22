@@ -47,7 +47,7 @@ def run_retrieval(opts):
     img_feat_db = DetectFeatLmdb(opts.img_feat_db, compress=False)
 
     # create retrieval dataset for input
-    img_ret_ds = ImageRetrievalDataset(opts.query,
+    img_ret_ds = ImageRetrievalDataset(opts.context,
                                        img_feat_db,
                                        opts.meta_file,
                                        opts.bs,
